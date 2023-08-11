@@ -1,11 +1,28 @@
-import com.theagilemonkeys.kava.utils.kotlin.async.JavaImpl
-import com.google.devtools.ksp.processing.*
+import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.getAnnotationsByType
+import com.google.devtools.ksp.processing.CodeGenerator
+import com.google.devtools.ksp.processing.Dependencies
+import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.processing.Resolver
+import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSValueParameter
 import com.google.devtools.ksp.symbol.Modifier
-import com.squareup.kotlinpoet.*
-import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.asTypeName
+import com.squareup.kotlinpoet.ksp.toClassName
+import com.squareup.kotlinpoet.ksp.toTypeName
+import com.theagilemonkeys.kava.utils.kotlin.async.JavaImpl
+import com.theagilemonkeys.kava.utils.kotlin.async.Library
+import com.theagilemonkeys.kava.utils.kotlin.async.generator.CompletableFutureReplacementGenerator
+import com.theagilemonkeys.kava.utils.kotlin.async.generator.ReplacementGenerator
+import com.theagilemonkeys.kava.utils.kotlin.async.generator.RxJavaReplacementGenerator
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.io.PrintWriter
@@ -13,8 +30,8 @@ import java.util.Collections.emptyList
 
 class JavaImplProcessor(
     private val codeGenerator: CodeGenerator,
-    private val logger: KSPLogger
-): SymbolProcessor {
+    private val logger: KSPLogger,
+) : SymbolProcessor {
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         resolver.getSymbolsWithAnnotation(JavaImpl::class.qualifiedName!!).forEach { symbol ->
@@ -26,50 +43,15 @@ class JavaImplProcessor(
         return emptyList()
     }
 
+    @OptIn(KspExperimental::class)
     private fun generateWrapperClass(symbol: KSClassDeclaration) {
-        val packageName = symbol.packageName.asString()
-        val oldClassName = symbol.simpleName.asString()
-        val newClassName = "${oldClassName}Java"
-        val file = codeGenerator.createNewFile(Dependencies.ALL_FILES, packageName, newClassName)
-        val classBuilder = TypeSpec.classBuilder(newClassName)
-
-        symbol.declarations.filterIsInstance<KSFunctionDeclaration>().forEach { function ->
-            if (function.modifiers.contains(Modifier.PUBLIC)) {
-                val generatedFun = handleSuspendFunction(function) ?: return@forEach
-                classBuilder.addFunction(generatedFun)
-            }
+        val javaImpl = symbol.getAnnotationsByType(JavaImpl::class).first()
+        val generator = when(javaImpl.library) {
+            Library.COMPLETABLE_FUTURE -> CompletableFutureReplacementGenerator()
+            Library.RXJAVA_3 -> RxJavaReplacementGenerator()
         }
-
-        val kotlinFile = FileSpec.builder(packageName, newClassName)
-            .addType(classBuilder.build())
-            .build()
-
-        kotlinFile.writeTo(PrintWriter(BufferedWriter(OutputStreamWriter(file))))
-    }
-
-    private fun handleSuspendFunction(symbol: KSFunctionDeclaration): FunSpec? {
-        if (!symbol.modifiers.contains(Modifier.SUSPEND)) return null
-
-        val originalFuncName = "${symbol.containingFile?.fileName?.removeSuffix(".kt")}.${symbol.simpleName.asString()}"
-        val newFuncName = "${symbol.simpleName.asString()}Java"
-
-        val params = symbol.parameters.map { ParameterSpec(it.name!!.asString(), ClassName.bestGuess(it.type.resolve().declaration.qualifiedName!!.asString())) }
-        val returnType = symbol.returnType?.resolve()?.declaration?.qualifiedName?.asString()
-        val funcBuilder = FunSpec.builder(newFuncName)
-            .addModifiers(KModifier.PUBLIC)
-
-        params.forEach { funcBuilder.addParameter(it) }
-
-        val completableFutureClass = ClassName("java.util.concurrent", "CompletableFuture")
-        funcBuilder.returns(completableFutureClass.parameterizedBy(ClassName.bestGuess(returnType ?: "java.lang.Void")))
-
-        val funcCallParams = params.joinToString(", ") { it.name }
-        if (returnType == "kotlin.Unit") {
-            funcBuilder.addStatement("return $completableFutureClass.runAsync(Runnable { kotlinx.coroutines.runBlocking { $originalFuncName($funcCallParams) } })")
-        } else {
-            funcBuilder.addStatement("return $completableFutureClass.supplyAsync(kotlinx.coroutines.runBlocking { $originalFuncName($funcCallParams) })")
-        }
-
-        return funcBuilder.build()
+        val fileSpec = generator.buildFileSpec(symbol, javaImpl.classSuffix)
+        val file = codeGenerator.createNewFile(Dependencies.ALL_FILES, fileSpec.packageName, fileSpec.name)
+        fileSpec.writeTo(PrintWriter(BufferedWriter(OutputStreamWriter(file))))
     }
 }
