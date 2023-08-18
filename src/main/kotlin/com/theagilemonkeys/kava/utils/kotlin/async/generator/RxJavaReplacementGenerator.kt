@@ -5,6 +5,7 @@ import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asTypeName
 import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.core.Single
@@ -17,6 +18,10 @@ class RxJavaReplacementGenerator : ReplacementGenerator() {
             "rxMaybe",
             "rxSingle",
         )
+    }
+
+    override fun initialise(typeSpec: TypeSpec.Builder) {
+        // do nothing
     }
 
     override fun suspendFunction(

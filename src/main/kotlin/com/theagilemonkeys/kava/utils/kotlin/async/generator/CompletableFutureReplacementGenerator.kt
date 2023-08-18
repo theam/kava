@@ -4,14 +4,46 @@ import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.PropertySpec
 import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asTypeName
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.CompletableFuture
+import kotlin.reflect.KClass
 
-class CompletableFutureReplacementGenerator : ReplacementGenerator() {
+class CompletableFutureReplacementGenerator(
+    private val defaultScope: KClass<*>,
+) : ReplacementGenerator() {
     override fun initialise(fileSpec: FileSpec.Builder) {
         fileSpec.addImport("kotlinx.coroutines.future", "future")
+    }
+
+    override fun initialise(typeSpec: TypeSpec.Builder) {
+        if (defaultScope.objectInstance != null) {
+            typeSpec.addProperty(
+                PropertySpec.builder(
+                    "scope",
+                    CoroutineScope::class
+                )
+                    .initializer("scope")
+                    .build()
+            )
+                .primaryConstructor(
+                    FunSpec.constructorBuilder()
+                        .addParameter("scope", defaultScope.asTypeName())
+                        .build()
+                )
+        } else {
+            typeSpec.addProperty(
+                PropertySpec.builder(
+                    "scope",
+                    CoroutineScope::class
+                )
+                    .initializer("%T", defaultScope)
+                    .build()
+            )
+        }
     }
 
     override fun suspendFunction(
@@ -21,7 +53,7 @@ class CompletableFutureReplacementGenerator : ReplacementGenerator() {
     ): FunSpec = FunSpec.builder(name)
         .addParameters(parameters)
         .returns(futureType.parameterizedBy(Unit::class.asTypeName()))
-        .beginControlFlow("return %T.future {", GlobalScope::class)
+        .beginControlFlow("return %T.future {", defaultScope)
         .addCode(wrappedFunctionCall(name, parameters))
         .endControlFlow()
         .build()
@@ -33,7 +65,7 @@ class CompletableFutureReplacementGenerator : ReplacementGenerator() {
     ): FunSpec = FunSpec.builder(name)
         .addParameters(parameters)
         .returns(futureType.parameterizedBy(Unit::class.asTypeName()))
-        .beginControlFlow("return %T.future {", GlobalScope::class)
+        .beginControlFlow("return %T.future {", defaultScope)
         .addCode("%L.toList()", wrappedFunctionCall(name, parameters))
         .endControlFlow()
         .build()

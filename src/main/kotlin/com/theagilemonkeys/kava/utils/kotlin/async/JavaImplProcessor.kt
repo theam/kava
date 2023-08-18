@@ -7,21 +7,9 @@ import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
-import com.google.devtools.ksp.symbol.KSFunctionDeclaration
-import com.google.devtools.ksp.symbol.KSValueParameter
-import com.google.devtools.ksp.symbol.Modifier
-import com.squareup.kotlinpoet.FileSpec
-import com.squareup.kotlinpoet.FunSpec
-import com.squareup.kotlinpoet.ParameterSpec
-import com.squareup.kotlinpoet.PropertySpec
-import com.squareup.kotlinpoet.TypeSpec
-import com.squareup.kotlinpoet.asTypeName
-import com.squareup.kotlinpoet.ksp.toClassName
-import com.squareup.kotlinpoet.ksp.toTypeName
 import com.theagilemonkeys.kava.utils.kotlin.async.JavaImpl
 import com.theagilemonkeys.kava.utils.kotlin.async.Library
 import com.theagilemonkeys.kava.utils.kotlin.async.generator.CompletableFutureReplacementGenerator
-import com.theagilemonkeys.kava.utils.kotlin.async.generator.ReplacementGenerator
 import com.theagilemonkeys.kava.utils.kotlin.async.generator.RxJavaReplacementGenerator
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
@@ -46,8 +34,9 @@ class JavaImplProcessor(
     @OptIn(KspExperimental::class)
     private fun generateWrapperClass(symbol: KSClassDeclaration) {
         val javaImpl = symbol.getAnnotationsByType(JavaImpl::class).first()
+        val defaultScope = javaImpl.defaultScope
         val generator = when(javaImpl.library) {
-            Library.COMPLETABLE_FUTURE -> CompletableFutureReplacementGenerator()
+            Library.COMPLETABLE_FUTURE -> CompletableFutureReplacementGenerator(defaultScope)
             Library.RXJAVA_3 -> RxJavaReplacementGenerator()
         }
         val fileSpec = generator.buildFileSpec(symbol, javaImpl.classSuffix)

@@ -60,6 +60,7 @@ abstract class ReplacementGenerator {
     }
 
     abstract fun initialise(fileSpec: FileSpec.Builder)
+    abstract fun initialise(typeSpec: TypeSpec.Builder)
 
     protected abstract fun suspendFunction(
         name: String,
